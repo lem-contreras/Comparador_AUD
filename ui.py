@@ -333,9 +333,6 @@ def render_metrics(metrics: dict):
 def render_alert(message: str, kind: str = "warning"):
     """
     Renderiza una alerta visual personalizada.
-
-    Args:
-        kind: "warning", "danger", "info", "success"
     """
     icons = {
         "warning": "⚠️",
@@ -373,24 +370,22 @@ def render_tab_title(icon: str, title: str):
 def render_spot_detail_sidebar(row_data: dict):
     """
     Renderiza el panel lateral con el detalle de un spot seleccionado.
-    Copia silenciosamente el ID al portapapeles.
+    Copia silenciosamente el ID al portapapeles y centra la vista.
     """
-    # Usamos "ID" porque en la tabla visual lo renombramos a "ID"
     spot_id = row_data.get("ID", row_data.get("Spot Id", row_data.get("_Spot Id", "—")))
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔍 Detalle del Spot")
     st.sidebar.markdown(f'<div class="spot-id-badge">ID: {spot_id}</div>', unsafe_allow_html=True)
 
-    # Hack para copiar silenciosamente al portapapeles usando JS y el objeto parent de Streamlit
     if spot_id and spot_id != "—":
-        copy_script = f"""
+        copy_and_scroll_script = f"""
         <script>
+        // 1. Copiado Silencioso
         const textToCopy = "{spot_id}";
         try {{
             parent.navigator.clipboard.writeText(textToCopy);
         }} catch (err) {{
-            // Fallback silencioso si las políticas del navegador bloquean la API moderna
             const textArea = parent.document.createElement("textarea");
             textArea.value = textToCopy;
             textArea.style.position = "fixed"; 
@@ -401,9 +396,17 @@ def render_spot_detail_sidebar(row_data: dict):
             try {{ parent.document.execCommand('copy'); }} catch (e) {{}}
             parent.document.body.removeChild(textArea);
         }}
+
+        // 2. Scroll Automático del Sidebar hacia abajo
+        setTimeout(() => {{
+            const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
+            if (sidebar) {{
+                sidebar.scrollTo({{ top: sidebar.scrollHeight, behavior: 'smooth' }});
+            }}
+        }}, 100);
         </script>
         """
-        components.html(copy_script, height=0, width=0)
+        components.html(copy_and_scroll_script, height=0, width=0)
 
     fields = [
         ("_Compañía",  "🏢 Compañía"),
@@ -414,7 +417,6 @@ def render_spot_detail_sidebar(row_data: dict):
         ("_Tipo",      "📌 Tipo"),
     ]
 
-    # Fallback sin prefijo
     fields_fallback = [
         ("Compañía",  "🏢 Compañía"),
         ("Marca",     "🏷️ Marca"),
@@ -433,10 +435,6 @@ def render_spot_detail_sidebar(row_data: dict):
         </div>
         """, unsafe_allow_html=True)
 
-    if st.sidebar.button("✕ Cerrar detalle", use_container_width=True):
-        st.session_state.selected_spot = None
-        st.rerun()
-
 
 def render_comparison_table(
     comparison_df: pd.DataFrame,
@@ -445,20 +443,16 @@ def render_comparison_table(
     tab_key: str
 ):
     """
-    Renderiza la tabla comparativa multicanal con semaforización.
-    Al seleccionar una fila, muestra el detalle en el sidebar.
+    Renderiza la tabla comparativa multicanal con semaforización y altura dinámica.
     """
     if comparison_df.empty:
         render_alert("No se encontraron datos para comparar.", "info")
         return
 
-    # Preparar tabla de visualización (solo columnas visibles)
     display_cols = [c for c in visible_cols if c in comparison_df.columns]
-    # Agregar columnas de canales y estado
     canal_cols = [c for c in canales if c in comparison_df.columns]
     all_display = display_cols + canal_cols + (["Estado"] if "Estado" in comparison_df.columns else [])
 
-    # Eliminar duplicados manteniendo orden
     seen = set()
     final_cols = []
     for c in all_display:
@@ -468,17 +462,20 @@ def render_comparison_table(
 
     display_df = comparison_df[final_cols].copy() if final_cols else comparison_df.copy()
 
-    # Instrucción de selección
     st.markdown("""
     <div class="selection-hint">
         👆 Haz clic en una fila para ver el detalle completo del spot en el panel lateral y <b>copiar el ID automáticamente</b>.
     </div>
     """, unsafe_allow_html=True)
 
-    # Renderizar con st.dataframe con selección de filas
+    # Fórmula para calcular la altura total basada en la cantidad de filas
+    # Aproximadamente 35px por fila + 43px del encabezado
+    dynamic_height = (len(display_df) * 35) + 43
+
     event = st.dataframe(
         display_df,
         use_container_width=True,
+        height=dynamic_height,  # <-- Altura dinámica aplicada aquí
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
@@ -492,7 +489,6 @@ def render_comparison_table(
         }
     )
 
-    # Procesar selección de fila
     if event and hasattr(event, "selection") and event.selection:
         selected_rows = event.selection.get("rows", [])
         if selected_rows:
@@ -504,7 +500,7 @@ def render_comparison_table(
 
 def render_program_summary_table(summary_df: pd.DataFrame):
     """
-    Renderiza la tabla resumen del programa con estilo corporativo.
+    Renderiza la tabla resumen del programa.
     """
     if summary_df.empty:
         render_alert("No se encontraron datos del programa.", "info")
