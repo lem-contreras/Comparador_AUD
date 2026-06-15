@@ -92,7 +92,7 @@ def compare_spots(
                     # Enriquecer datos con el primer match encontrado
                     if "_Spot" not in row:
                         first = matches.iloc[0]
-                        for col in ["Inicio", "Duración", "Spot", "Posición", "Compañía", "Marca", "SubMarca", "Producto", "Producto", "Campaña"]:
+                        for col in ["Inicio", "Duración", "Spot", "Posición", "Compañía", "Marca", "SubMarca", "Producto", "Tipo", "Campaña"]:
                             if col in first.index and f"_{col}" not in row:
                                 row[f"_{col}"] = first[col]
 
