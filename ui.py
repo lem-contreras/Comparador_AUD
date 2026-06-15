@@ -7,6 +7,7 @@ Estilos, semaforización visual y renderizado de tablas comparativas.
 
 import streamlit as st
 import pandas as pd
+import streamlit.components.v1 as components
 from typing import Dict, List, Optional
 from comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING, BG_COLOR_MAP, COLOR_MAP
 
@@ -372,15 +373,37 @@ def render_tab_title(icon: str, title: str):
 def render_spot_detail_sidebar(row_data: dict):
     """
     Renderiza el panel lateral con el detalle de un spot seleccionado.
-
-    Args:
-        row_data: Diccionario con los datos del spot (claves con prefijo _).
+    Copia silenciosamente el ID al portapapeles.
     """
-    spot_id = row_data.get("Spot Id", row_data.get("_Spot Id", "—"))
+    # Usamos "ID" porque en la tabla visual lo renombramos a "ID"
+    spot_id = row_data.get("ID", row_data.get("Spot Id", row_data.get("_Spot Id", "—")))
 
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 🔍 Detalle del Spot")
     st.sidebar.markdown(f'<div class="spot-id-badge">ID: {spot_id}</div>', unsafe_allow_html=True)
+
+    # Hack para copiar silenciosamente al portapapeles usando JS y el objeto parent de Streamlit
+    if spot_id and spot_id != "—":
+        copy_script = f"""
+        <script>
+        const textToCopy = "{spot_id}";
+        try {{
+            parent.navigator.clipboard.writeText(textToCopy);
+        }} catch (err) {{
+            // Fallback silencioso si las políticas del navegador bloquean la API moderna
+            const textArea = parent.document.createElement("textarea");
+            textArea.value = textToCopy;
+            textArea.style.position = "fixed"; 
+            textArea.style.opacity = "0";
+            parent.document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {{ parent.document.execCommand('copy'); }} catch (e) {{}}
+            parent.document.body.removeChild(textArea);
+        }}
+        </script>
+        """
+        components.html(copy_script, height=0, width=0)
 
     fields = [
         ("_Compañía",  "🏢 Compañía"),
@@ -388,6 +411,7 @@ def render_spot_detail_sidebar(row_data: dict):
         ("_SubMarca",  "📎 SubMarca"),
         ("_Producto",  "📦 Producto"),
         ("_Campaña",   "📣 Campaña"),
+        ("_Tipo",      "📌 Tipo"),
     ]
 
     # Fallback sin prefijo
@@ -397,6 +421,7 @@ def render_spot_detail_sidebar(row_data: dict):
         ("SubMarca",  "📎 SubMarca"),
         ("Producto",  "📦 Producto"),
         ("Campaña",   "📣 Campaña"),
+        ("Tipo",      "📌 Tipo"),
     ]
 
     for (key, label), (key_fb, _) in zip(fields, fields_fallback):
@@ -422,12 +447,6 @@ def render_comparison_table(
     """
     Renderiza la tabla comparativa multicanal con semaforización.
     Al seleccionar una fila, muestra el detalle en el sidebar.
-
-    Args:
-        comparison_df: DataFrame de comparación con columna 'Estado'.
-        canales: Lista de nombres de canales.
-        visible_cols: Columnas a mostrar en la tabla principal.
-        tab_key: Clave única para este widget (evita conflictos de estado).
     """
     if comparison_df.empty:
         render_alert("No se encontraron datos para comparar.", "info")
@@ -452,7 +471,7 @@ def render_comparison_table(
     # Instrucción de selección
     st.markdown("""
     <div class="selection-hint">
-        👆 Haz clic en una fila para ver el detalle completo del spot en el panel lateral
+        👆 Haz clic en una fila para ver el detalle completo del spot en el panel lateral y <b>copiar el ID automáticamente</b>.
     </div>
     """, unsafe_allow_html=True)
 
@@ -534,9 +553,6 @@ def render_legend(program_name: str):
 def render_autopromo_config(canales: List[str]) -> Dict[str, bool]:
     """
     Renderiza el panel de configuración de exclusión de autopromos.
-
-    Returns:
-        Diccionario {canal: excluir_bool}
     """
     st.markdown("#### ⚙️ Configuración de Autopromos")
     st.caption("Activa la exclusión para ignorar registros donde Producto = 'Autopromo' en cada canal.")
