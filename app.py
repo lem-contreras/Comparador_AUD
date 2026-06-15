@@ -29,24 +29,24 @@ st.set_page_config(
 )
 
 # ── Imports de módulos propios ─────────────────────────────────────────────
-from modules.loader import process_uploaded_files
-from modules.parser import (
+from loader import process_uploaded_files
+from parser import (
     get_unified_program_list,
     filter_by_program,
     add_clean_program_column,
 )
-from modules.comparator import (
+from comparator import (
     compare_acciones_especiales,
     compare_tandas,
     build_program_summary,
     get_metrics,
     detect_autopromos,
 )
-from modules.validations import (
+from validations import (
     validate_program_consistency,
     detect_empty_canales,
 )
-from modules.ui import (
+from ui import (
     inject_css,
     render_app_header,
     render_metrics,
@@ -58,7 +58,7 @@ from modules.ui import (
     render_comparison_table,
     render_program_summary_table,
 )
-from modules.exporter import (
+from exporter import (
     df_to_excel_bytes,
     df_to_csv_bytes,
     build_export_filename,
@@ -227,7 +227,7 @@ def render_tab_acciones(
     # Estadísticas rápidas
     col_s1, col_s2, col_s3 = st.columns(3)
     total = len(comparison_df)
-    from modules.comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING
+    from comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING
     en_todos  = (comparison_df["Estado"] == STATUS_ALL).sum()     if "Estado" in comparison_df.columns else 0
     parciales = (comparison_df["Estado"] == STATUS_PARTIAL).sum() if "Estado" in comparison_df.columns else 0
     faltantes = (comparison_df["Estado"] == STATUS_MISSING).sum() if "Estado" in comparison_df.columns else 0
@@ -306,7 +306,7 @@ def render_tab_tandas(
         return
 
     # Estadísticas
-    from modules.comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING
+    from comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING
     total     = len(comparison_df)
     en_todos  = (comparison_df["Estado"] == STATUS_ALL).sum()     if "Estado" in comparison_df.columns else 0
     parciales = (comparison_df["Estado"] == STATUS_PARTIAL).sum() if "Estado" in comparison_df.columns else 0
