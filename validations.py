@@ -20,7 +20,7 @@ def validate_program_consistency(
     Returns:
         (hay_inconsistencias, {canal: [nombres_crudos_encontrados]})
     """
-    from modules.parser import extract_program_name
+    from parser import extract_program_name
 
     variantes_crudas = {}
 
@@ -72,7 +72,7 @@ def detect_empty_canales(
     Returns:
         Lista de nombres de canales sin datos del programa.
     """
-    from modules.parser import filter_by_program
+    from parser import filter_by_program
 
     vacios = []
     for canal, df in canales_data.items():
@@ -121,7 +121,7 @@ def get_canal_summary_stats(
     Returns:
         Diccionario con conteos de registros por tipo de bloque.
     """
-    from modules.parser import filter_by_program
+    from parser import filter_by_program
 
     filtered = filter_by_program(df, program_name)
 
