@@ -506,7 +506,7 @@ def main():
                 st.markdown(f"**{canal}:**")
                 for n in nombres:
                     st.code(n, language=None)
-
+                    
     # 3. Alertas de autopromos activos
     alertas_auto = detect_autopromos(canales_filtrados, excluir_autopromos)
     for canal_con_auto in alertas_auto:
