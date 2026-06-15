@@ -8,7 +8,7 @@ Estilos, semaforización visual y renderizado de tablas comparativas.
 import streamlit as st
 import pandas as pd
 from typing import Dict, List, Optional
-from modules.comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING, BG_COLOR_MAP, COLOR_MAP
+from comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING, BG_COLOR_MAP, COLOR_MAP
 
 
 # ─── CSS Global ──────────────────────────────────────────────────────────────
@@ -496,9 +496,9 @@ def render_program_summary_table(summary_df: pd.DataFrame):
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Canal":           st.column_config.TextColumn("📺 Canal",           width="medium"),
-            "Inicio":          st.column_config.TextColumn("🕐 Inicio",          width="small"),
-            "Fin":             st.column_config.TextColumn("🕑 Fin",             width="small"),
+            "Canal":           st.column_config.TextColumn("📺 Canal",            width="medium"),
+            "Inicio":          st.column_config.TextColumn("🕐 Inicio",           width="small"),
+            "Fin":             st.column_config.TextColumn("🕑 Fin",              width="small"),
             "Duración Total":  st.column_config.TextColumn("⏱️ Duración Total",  width="small"),
         }
     )
