@@ -497,16 +497,7 @@ def main():
             f"<strong>{', '.join(vacios)}</strong>",
             "warning"
         )
-
-    # 2. Inconsistencias en nombre del programa entre canales
-    hay_incon, variantes = validate_program_consistency(canales, program_name)
-    if hay_incon:
-        with st.expander("⚠️ Se detectaron nombres de programa distintos entre canales", expanded=True):
-            for canal, nombres in variantes.items():
-                st.markdown(f"**{canal}:**")
-                for n in nombres:
-                    st.code(n, language=None)
-                    
+                   
     # 3. Alertas de autopromos activos
     alertas_auto = detect_autopromos(canales_filtrados, excluir_autopromos)
     for canal_con_auto in alertas_auto:
