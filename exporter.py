@@ -80,7 +80,7 @@ def prepare_differences_export(
     if comparison_df.empty:
         return pd.DataFrame()
 
-    from modules.comparator import STATUS_ALL
+    from comparator import STATUS_ALL
 
     # Solo filas que NO están en todos los canales
     if "Estado" in comparison_df.columns:
