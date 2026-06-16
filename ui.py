@@ -370,12 +370,14 @@ def render_tab_title(icon: str, title: str):
 def render_spot_detail_sidebar(row_data: dict):
     """
     Renderiza el panel lateral con el detalle de un spot seleccionado.
-    Copia silenciosamente el ID al portapapeles y centra la vista.
+    Copia silenciosamente el ID al portapapeles y centra la vista con scrollIntoView.
     """
     spot_id = row_data.get("ID", row_data.get("Spot Id", row_data.get("_Spot Id", "—")))
 
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 🔍 Detalle del Spot")
+    
+    # ANCLA: Le agregamos un ID de HTML al título para que el script sepa a dónde apuntar
+    st.sidebar.markdown('<h3 id="detalle-spot-anchor" style="margin-top:0;">🔍 Detalle del Spot</h3>', unsafe_allow_html=True)
     st.sidebar.markdown(f'<div class="spot-id-badge">ID: {spot_id}</div>', unsafe_allow_html=True)
 
     if spot_id and spot_id != "—":
@@ -397,13 +399,21 @@ def render_spot_detail_sidebar(row_data: dict):
             parent.document.body.removeChild(textArea);
         }}
 
-        // 2. Scroll Automático del Sidebar hacia abajo
+        // 2. Scroll Automático usando el Ancla
+        // 400ms da tiempo suficiente para que Streamlit termine de renderizar el Sidebar
         setTimeout(() => {{
-            const sidebar = parent.document.querySelector('[data-testid="stSidebar"]');
-            if (sidebar) {{
-                sidebar.scrollTo({{ top: sidebar.scrollHeight, behavior: 'smooth' }});
+            const anchor = parent.document.getElementById('detalle-spot-anchor');
+            if (anchor) {{
+                // 'start' alinea el elemento con la parte superior del contenedor
+                anchor.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+            }} else {{
+                // Fallback por si la estructura cambia
+                const sidebar = parent.document.querySelector('[data-testid="stSidebarContent"]');
+                if (sidebar) {{
+                    sidebar.scrollTo({{ top: sidebar.scrollHeight, behavior: 'smooth' }});
+                }}
             }}
-        }}, 100);
+        }}, 400);
         </script>
         """
         components.html(copy_and_scroll_script, height=0, width=0)
@@ -468,14 +478,12 @@ def render_comparison_table(
     </div>
     """, unsafe_allow_html=True)
 
-    # Fórmula para calcular la altura total basada en la cantidad de filas
-    # Aproximadamente 35px por fila + 43px del encabezado
     dynamic_height = (len(display_df) * 35) + 43
 
     event = st.dataframe(
         display_df,
         use_container_width=True,
-        height=dynamic_height,  # <-- Altura dinámica aplicada aquí
+        height=dynamic_height,
         hide_index=True,
         on_select="rerun",
         selection_mode="single-row",
