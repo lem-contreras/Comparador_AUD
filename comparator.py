@@ -38,12 +38,39 @@ def compare_spots(
     excluir_autopromos: Dict[str, bool] = None,
     key_column: str = "Spot Id"
 ) -> pd.DataFrame:
+    """
+    Compara spots entre canales aplicando sincronización inteligente.
+    Calcula el desfase de inicio del programa por canal y lo descuenta
+    para comparar en tiempos relativos con +/- 10s de tolerancia.
+    """
     if excluir_autopromos is None:
         excluir_autopromos = {}
 
     canal_names = list(canales_data.keys())
-    spots_por_canal: Dict[str, pd.DataFrame] = {}
+    
+    # 1. Calcular desfases globales (offsets) de los canales basados en el inicio del programa
+    channel_offsets = {}
+    program_starts = {}
+    
+    for canal, df in canales_data.items():
+        if "Tipo Bloque Norm" in df.columns and "Inicio" in df.columns:
+            mask_prog = df["Tipo Bloque Norm"].str.strip().str.lower() == "programa"
+            df_prog = df[mask_prog]
+            if not df_prog.empty:
+                inicio_str = df_prog["Inicio"].dropna().iloc[0]
+                try:
+                    program_starts[canal] = pd.to_datetime(str(inicio_str).strip())
+                except Exception:
+                    pass
+                    
+    if program_starts:
+        global_min_start = min(program_starts.values())
+        for canal, start_time in program_starts.items():
+            # Cuántos segundos empezó tarde este canal respecto al primero
+            channel_offsets[canal] = (start_time - global_min_start).total_seconds()
 
+    # 2. Filtrar solo los registros del tipo de bloque que estamos comparando
+    spots_por_canal: Dict[str, pd.DataFrame] = {}
     for canal, df in canales_data.items():
         if "Tipo Bloque Norm" not in df.columns:
             spots_por_canal[canal] = pd.DataFrame()
@@ -52,6 +79,7 @@ def compare_spots(
         mask = df["Tipo Bloque Norm"].str.strip().str.lower() == tipo_bloque_norm.lower()
         spots_por_canal[canal] = df[mask].copy()
 
+    # 3. Obtener universo total de IDs y detectar Autopromos
     all_ids = set()
     autopromo_ids = set()
 
@@ -67,6 +95,7 @@ def compare_spots(
     if not all_ids:
         return pd.DataFrame()
 
+    # 4. Construir las filas de comparación
     rows = []
     for spot_id in sorted(all_ids):
         row = {"Spot Id": spot_id}
@@ -76,7 +105,8 @@ def compare_spots(
         required_count = len(canal_names)
         ignored_everywhere = True
 
-        times_for_spot = {}
+        # Recopilar tiempos AJUSTADOS de "Inicio" (Tiempo Real - Desfase del Canal)
+        adjusted_times_for_spot = {}
         for canal in canal_names:
             df_canal = spots_por_canal.get(canal, pd.DataFrame())
             if not df_canal.empty and key_column in df_canal.columns:
@@ -85,11 +115,14 @@ def compare_spots(
                     first = matches.iloc[0]
                     if "Inicio" in first.index and pd.notna(first["Inicio"]):
                         try:
-                            times_for_spot[canal] = pd.to_datetime(str(first["Inicio"]).strip())
+                            actual_time = pd.to_datetime(str(first["Inicio"]).strip())
+                            offset = channel_offsets.get(canal, 0.0)
+                            # Restamos el retraso original del canal para nivelarlos
+                            adjusted_times_for_spot[canal] = actual_time - pd.Timedelta(seconds=offset)
                         except Exception:
                             pass
                             
-        min_time = min(times_for_spot.values()) if times_for_spot else None
+        min_adj_time = min(adjusted_times_for_spot.values()) if adjusted_times_for_spot else None
         has_delay = False
 
         for canal in canal_names:
@@ -114,8 +147,9 @@ def compare_spots(
                     required_count -= 1
                 else:
                     is_delayed = False
-                    if min_time and canal in times_for_spot:
-                        diff_sec = abs((times_for_spot[canal] - min_time).total_seconds())
+                    if min_adj_time and canal in adjusted_times_for_spot:
+                        # Diferencia relativa (ya nivelada)
+                        diff_sec = abs((adjusted_times_for_spot[canal] - min_adj_time).total_seconds())
                         if diff_sec > 10:
                             is_delayed = True
                             has_delay = True
@@ -208,9 +242,6 @@ def build_program_summary(
 
 
 def _sum_durations(duration_series: pd.Series) -> str:
-    """
-    Suma duraciones tolerando tanto formato HH:MM:SS como segundos en formato numérico/string.
-    """
     total_seconds = 0
 
     for val in duration_series.dropna():
@@ -229,7 +260,6 @@ def _sum_durations(duration_series: pd.Series) -> str:
                 continue
         else:
             try:
-                # Si viene como segundos puros (ej: "20" o "12.5")
                 total_seconds += int(float(val))
             except ValueError:
                 continue
@@ -269,7 +299,6 @@ def get_metrics(
         total_tandas += tandas
         total_spots += acciones + tandas
 
-        # Cálculo de métrica superior: Fin - Inicio del programa
         prog_mask = tipo_norm == "programa"
         df_prog = df[prog_mask]
         
