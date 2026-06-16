@@ -92,7 +92,7 @@ def compare_spots(
                     # Enriquecer datos con el primer match encontrado
                     if "_Spot" not in row:
                         first = matches.iloc[0]
-                        for col in ["Inicio", "Duración", "Spot", "Posición", "Compañía", "Marca", "SubMarca", "Producto", "Tipo", "Campaña"]:
+                        for col in ["Inicio", "Duración", "Spot", "Posición", "Compañía", "Marca", "SubMarca", "Producto", "Campaña", "Tipo"]:
                             if col in first.index and f"_{col}" not in row:
                                 row[f"_{col}"] = first[col]
 
@@ -138,7 +138,10 @@ def compare_acciones_especiales(
     canales_data: Dict[str, pd.DataFrame],
     excluir_autopromos: Dict[str, bool]
 ) -> pd.DataFrame:
-    # Pasamos el diccionario de exclusiones directo a compare_spots
+    """
+    Comparación de Acciones Especiales. 
+    AQUÍ SÍ se aplica la lógica de excluir autopromos si el usuario lo solicita.
+    """
     return compare_spots(canales_data, "accion especial", excluir_autopromos)
 
 
@@ -146,8 +149,12 @@ def compare_tandas(
     canales_data: Dict[str, pd.DataFrame],
     excluir_autopromos: Dict[str, bool]
 ) -> pd.DataFrame:
-    # Pasamos el diccionario de exclusiones directo a compare_spots
-    return compare_spots(canales_data, "tanda publicitaria", excluir_autopromos)
+    """
+    Comparación de Tandas Publicitarias (Carrier + Break unificados).
+    AQUÍ NO se aplica la exclusión. Los autopromos se evalúan como spots normales y obligatorios.
+    """
+    # Pasamos un diccionario vacío {} para forzar que NO se ignore nada
+    return compare_spots(canales_data, "tanda publicitaria", {})
 
 
 def build_program_summary(
@@ -232,17 +239,19 @@ def get_metrics(
         if "Tipo Bloque Norm" not in df.columns:
             continue
 
-        df_work = df.copy()
+        tipo_norm = df["Tipo Bloque Norm"].str.strip().str.lower()
+        
+        # Separamos las máscaras
+        mask_acciones = tipo_norm == "accion especial"
+        mask_tandas = tipo_norm == "tanda publicitaria"
 
-        # En las métricas sí filtramos para que no inflen los contadores
-        if excluir_autopromos.get(canal, False) and "Producto" in df_work.columns:
-            mask_auto = df_work["Producto"].fillna("").str.strip().str.lower() == "autopromo"
-            df_work = df_work[~mask_auto]
+        # Aplicar exclusión de autopromos SOLO a la máscara de Acciones Especiales
+        if excluir_autopromos.get(canal, False) and "Producto" in df.columns:
+            mask_auto = df["Producto"].fillna("").str.strip().str.lower() == "autopromo"
+            mask_acciones = mask_acciones & (~mask_auto)
 
-        tipo_norm = df_work["Tipo Bloque Norm"].str.strip().str.lower()
-
-        acciones = (tipo_norm == "accion especial").sum()
-        tandas = (tipo_norm == "tanda publicitaria").sum()
+        acciones = mask_acciones.sum()
+        tandas = mask_tandas.sum()
 
         total_acciones += acciones
         total_tandas += tandas
@@ -250,8 +259,8 @@ def get_metrics(
 
         # Duración del programa
         prog_mask = tipo_norm == "programa"
-        if prog_mask.any() and "Duración" in df_work.columns:
-            dur = _sum_durations(df_work.loc[prog_mask, "Duración"])
+        if prog_mask.any() and "Duración" in df.columns:
+            dur = _sum_durations(df.loc[prog_mask, "Duración"])
             duraciones.append(dur)
 
     return {
