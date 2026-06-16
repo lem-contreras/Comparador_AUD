@@ -11,9 +11,9 @@ from typing import Dict, List, Optional, Tuple
 
 # ─── Constantes de estado ────────────────────────────────────────────────────
 
-STATUS_ALL     = "✅ En todos"      # Verde: existe en todos los canales
-STATUS_PARTIAL = "⚠️ Parcial"       # Amarillo: existe en algunos canales o tiene desfase
-STATUS_MISSING = "❌ Faltante"      # Rojo: falta en algún canal
+STATUS_ALL     = "✅ En todos"      
+STATUS_PARTIAL = "⚠️ Parcial"       
+STATUS_MISSING = "❌ Faltante"      
 
 # ─── Colores de semaforización ───────────────────────────────────────────────
 
@@ -38,10 +38,6 @@ def compare_spots(
     excluir_autopromos: Dict[str, bool] = None,
     key_column: str = "Spot Id"
 ) -> pd.DataFrame:
-    """
-    Compara spots entre canales.
-    Aplica tolerancia de +/- 10 segundos en la hora de inicio.
-    """
     if excluir_autopromos is None:
         excluir_autopromos = {}
 
@@ -56,7 +52,6 @@ def compare_spots(
         mask = df["Tipo Bloque Norm"].str.strip().str.lower() == tipo_bloque_norm.lower()
         spots_por_canal[canal] = df[mask].copy()
 
-    # Obtener universo total de IDs y detectar cuáles son Autopromos
     all_ids = set()
     autopromo_ids = set()
 
@@ -81,7 +76,6 @@ def compare_spots(
         required_count = len(canal_names)
         ignored_everywhere = True
 
-        # 1. Recopilar tiempos de "Inicio" para calcular la hora base (min_time)
         times_for_spot = {}
         for canal in canal_names:
             df_canal = spots_por_canal.get(canal, pd.DataFrame())
@@ -91,7 +85,6 @@ def compare_spots(
                     first = matches.iloc[0]
                     if "Inicio" in first.index and pd.notna(first["Inicio"]):
                         try:
-                            # Convertir a datetime para poder restar los tiempos
                             times_for_spot[canal] = pd.to_datetime(str(first["Inicio"]).strip())
                         except Exception:
                             pass
@@ -99,7 +92,6 @@ def compare_spots(
         min_time = min(times_for_spot.values()) if times_for_spot else None
         has_delay = False
 
-        # 2. Evaluar la presencia y el desfase en cada canal
         for canal in canal_names:
             df_canal = spots_por_canal.get(canal, pd.DataFrame())
             has_spot = False
@@ -108,7 +100,6 @@ def compare_spots(
                 matches = df_canal[df_canal[key_column].astype(str) == spot_id]
                 if not matches.empty:
                     has_spot = True
-                    # Enriquecer datos con el primer match
                     if "_Spot" not in row:
                         first = matches.iloc[0]
                         for col in ["Inicio", "Duración", "Spot", "Posición", "Compañía", "Marca", "SubMarca", "Producto", "Campaña", "Tipo"]:
@@ -122,7 +113,6 @@ def compare_spots(
                     row[canal] = "⚪ Auto"
                     required_count -= 1
                 else:
-                    # Lógica de desfase (+/- 10 segundos)
                     is_delayed = False
                     if min_time and canal in times_for_spot:
                         diff_sec = abs((times_for_spot[canal] - min_time).total_seconds())
@@ -131,7 +121,6 @@ def compare_spots(
                             has_delay = True
                             
                     if is_delayed:
-                        # Formatear el retraso visualmente
                         if diff_sec > 60:
                             m = int(diff_sec // 60)
                             s = int(diff_sec % 60)
@@ -154,11 +143,9 @@ def compare_spots(
         if ignored_everywhere and required_count == 0:
             continue
 
-        # 3. Determinar estado final
         if required_count == 0:
             row["Estado"] = STATUS_ALL
         elif canal_count == required_count:
-            # Si están todos pero hay desfase, se marca como Parcial
             row["Estado"] = STATUS_PARTIAL if has_delay else STATUS_ALL
         elif canal_count == 0:
             row["Estado"] = STATUS_MISSING
@@ -181,7 +168,6 @@ def compare_tandas(
     canales_data: Dict[str, pd.DataFrame],
     excluir_autopromos: Dict[str, bool]
 ) -> pd.DataFrame:
-    # Se pasa diccionario vacío para NO ignorar los autopromos en Tandas
     return compare_spots(canales_data, "tanda publicitaria", {})
 
 
@@ -222,25 +208,36 @@ def build_program_summary(
 
 
 def _sum_durations(duration_series: pd.Series) -> str:
+    """
+    Suma duraciones tolerando tanto formato HH:MM:SS como segundos en formato numérico/string.
+    """
     total_seconds = 0
 
     for val in duration_series.dropna():
         val = str(val).strip()
-        parts = val.split(":")
-        try:
-            if len(parts) == 3:
-                h, m, s = int(parts[0]), int(parts[1]), int(float(parts[2]))
-                total_seconds += h * 3600 + m * 60 + s
-            elif len(parts) == 2:
-                m, s = int(parts[0]), int(float(parts[1]))
-                total_seconds += m * 60 + s
-        except (ValueError, IndexError):
+        if not val:
             continue
+            
+        if ":" in val:
+            parts = val.split(":")
+            try:
+                if len(parts) == 3:
+                    total_seconds += int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
+                elif len(parts) == 2:
+                    total_seconds += int(parts[0]) * 60 + int(float(parts[1]))
+            except (ValueError, IndexError):
+                continue
+        else:
+            try:
+                # Si viene como segundos puros (ej: "20" o "12.5")
+                total_seconds += int(float(val))
+            except ValueError:
+                continue
 
     h = total_seconds // 3600
     m = (total_seconds % 3600) // 60
     s = total_seconds % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{int(h):02d}:{int(m):02d}:{int(s):02d}"
 
 
 def get_metrics(
@@ -250,7 +247,7 @@ def get_metrics(
     total_spots = 0
     total_acciones = 0
     total_tandas = 0
-    duraciones = []
+    duraciones_totales = []
 
     for canal, df in canales_data.items():
         if "Tipo Bloque Norm" not in df.columns:
@@ -272,16 +269,38 @@ def get_metrics(
         total_tandas += tandas
         total_spots += acciones + tandas
 
+        # Cálculo de métrica superior: Fin - Inicio del programa
         prog_mask = tipo_norm == "programa"
-        if prog_mask.any() and "Duración" in df.columns:
-            dur = _sum_durations(df.loc[prog_mask, "Duración"])
-            duraciones.append(dur)
+        df_prog = df[prog_mask]
+        
+        if not df_prog.empty:
+            try:
+                inicio_val = df_prog["Inicio"].dropna().iloc[0] if "Inicio" in df_prog.columns else None
+                fin_val = df_prog["Final"].dropna().iloc[-1] if "Final" in df_prog.columns else None
+                
+                if inicio_val and fin_val:
+                    ini_dt = pd.to_datetime(str(inicio_val).strip())
+                    fin_dt = pd.to_datetime(str(fin_val).strip())
+                    diff = (fin_dt - ini_dt).total_seconds()
+                    if diff > 0:
+                        duraciones_totales.append(diff)
+            except Exception:
+                pass
+
+    if duraciones_totales:
+        avg_sec = sum(duraciones_totales) / len(duraciones_totales)
+        h = int(avg_sec // 3600)
+        m = int((avg_sec % 3600) // 60)
+        s = int(avg_sec % 60)
+        dur_str = f"{h:02d}:{m:02d}:{s:02d}"
+    else:
+        dur_str = "—"
 
     return {
         "total_spots": total_spots,
         "total_acciones": total_acciones,
         "total_tandas": total_tandas,
-        "duracion_programa": duraciones[0] if duraciones else "—"
+        "duracion_programa": dur_str
     }
 
 
