@@ -6,20 +6,13 @@ Detecta inconsistencias de nombres, columnas faltantes y anomalías.
 """
 
 import pandas as pd
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Union
 
 
 def validate_program_consistency(
     canales_data: Dict[str, pd.DataFrame],
     program_name: str
 ) -> Tuple[bool, Dict[str, List[str]]]:
-    """
-    Verifica que todos los canales tengan el mismo nombre de programa
-    (antes de la limpieza de horarios).
-
-    Returns:
-        (hay_inconsistencias, {canal: [nombres_crudos_encontrados]})
-    """
     from parser import extract_program_name
 
     variantes_crudas = {}
@@ -28,7 +21,6 @@ def validate_program_consistency(
         if "Programa" not in df.columns:
             continue
 
-        # Buscar nombres que coincidan con el programa limpio
         nombres_raw = df["Programa"].dropna().astype(str)
         nombres_limpios = nombres_raw.apply(extract_program_name)
 
@@ -38,7 +30,6 @@ def validate_program_consistency(
         if nombres_originales:
             variantes_crudas[canal] = nombres_originales
 
-    # Recolectar todos los nombres únicos crudos entre canales
     todos = set()
     for nombres in variantes_crudas.values():
         todos.update(nombres)
@@ -52,31 +43,22 @@ def validate_required_columns(
     canal: str,
     required: set
 ) -> List[str]:
-    """
-    Verifica que el DataFrame tenga todas las columnas requeridas.
-
-    Returns:
-        Lista de columnas faltantes.
-    """
     missing = required - set(df.columns)
     return list(missing)
 
 
 def detect_empty_canales(
     canales_data: Dict[str, pd.DataFrame],
-    program_name: str
+    program_names: Union[str, List[str]]
 ) -> List[str]:
     """
-    Detecta canales que no tienen datos para el programa seleccionado.
-
-    Returns:
-        Lista de nombres de canales sin datos del programa.
+    Detecta canales que no tienen datos para los programas seleccionados.
     """
     from parser import filter_by_program
 
     vacios = []
     for canal, df in canales_data.items():
-        filtered = filter_by_program(df, program_name)
+        filtered = filter_by_program(df, program_names)
         if filtered.empty:
             vacios.append(canal)
 
@@ -86,12 +68,6 @@ def detect_empty_canales(
 def validate_date_consistency(
     canales_data: Dict[str, pd.DataFrame]
 ) -> Tuple[bool, Dict[str, List[str]]]:
-    """
-    Verifica que todos los canales tengan la misma fecha de emisión.
-
-    Returns:
-        (hay_inconsistencias, {canal: [fechas_encontradas]})
-    """
     fechas_por_canal = {}
 
     for canal, df in canales_data.items():
@@ -101,7 +77,6 @@ def validate_date_consistency(
         fechas = df["Fecha"].dropna().astype(str).unique().tolist()
         fechas_por_canal[canal] = fechas
 
-    # Verificar unicidad de fechas globales
     todas = set()
     for f in fechas_por_canal.values():
         todas.update(f)
@@ -115,12 +90,6 @@ def get_canal_summary_stats(
     canal: str,
     program_name: str
 ) -> Dict:
-    """
-    Genera estadísticas resumidas de un canal para el programa dado.
-
-    Returns:
-        Diccionario con conteos de registros por tipo de bloque.
-    """
     from parser import filter_by_program
 
     filtered = filter_by_program(df, program_name)
