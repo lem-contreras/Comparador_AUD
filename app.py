@@ -76,16 +76,16 @@ inject_css()
 
 def get_filtered_canales(
     canales: Dict[str, pd.DataFrame],
-    program_name: str
+    program_names: List[str]
 ) -> Dict[str, pd.DataFrame]:
     """
-    Filtra todos los canales por el programa seleccionado.
+    Filtra todos los canales por la lista de programas seleccionados.
     Agrega la columna 'Programa Limpio' a cada DataFrame.
     """
     result = {}
     for canal, df in canales.items():
         df_with_col = add_clean_program_column(df)
-        filtered = filter_by_program(df_with_col, program_name)
+        filtered = filter_by_program(df_with_col, program_names)
         result[canal] = filtered
     return result
 
@@ -209,7 +209,7 @@ def render_sidebar() -> Optional[Dict[str, pd.DataFrame]]:
 def render_tab_acciones(
     canales_filtrados: Dict[str, pd.DataFrame],
     canales_names: List[str],
-    program_name: str,
+    program_name_display: str,
     excluir_autopromos: Dict[str, bool]
 ):
     render_tab_title("⚡", "Acciones Especiales")
@@ -246,18 +246,15 @@ def render_tab_acciones(
     with col_l1:
         st.markdown('<span class="badge badge-green">✅ En todos</span> Presente en todos los canales', unsafe_allow_html=True)
     with col_l2:
-        st.markdown('<span class="badge badge-yellow">⚠️ Parcial</span> Solo en algunos canales', unsafe_allow_html=True)
+        st.markdown('<span class="badge badge-yellow">⚠️ Parcial</span> Solo en algunos canales o con desfase', unsafe_allow_html=True)
     with col_l3:
         st.markdown('<span class="badge badge-red">❌ Faltante</span> Ausente en algún canal', unsafe_allow_html=True)
 
     st.markdown("")
 
-    # Columnas visibles: Inicio, Duración, ID (Spot Id), Spot
     visible_cols = ["Spot Id", "_Inicio", "_Duración", "_Spot"]
-    # Renombrar para mostrar
     display_df = comparison_df.copy()
 
-    # Crear versión para mostrar con columna ID renombrada
     show_df = display_df.rename(columns={"Spot Id": "ID"})
     canal_cols = [c for c in canales_names if c in show_df.columns]
     visible = ["ID"]
@@ -267,7 +264,6 @@ def render_tab_acciones(
     visible += canal_cols
     if "Estado" in show_df.columns: visible.append("Estado")
 
-    # Limpiar columnas privadas para mostrar (quitar prefijo _)
     rename_map = {c: c.lstrip("_") for c in show_df.columns if c.startswith("_")}
     show_df = show_df.rename(columns=rename_map)
     visible_clean = [rename_map.get(c, c) for c in visible]
@@ -279,8 +275,7 @@ def render_tab_acciones(
         tab_key="acciones"
     )
 
-    # Exportación
-    render_export_section(comparison_df, program_name, "acciones", canales_names, "Acciones Especiales")
+    render_export_section(comparison_df, program_name_display, "acciones", canales_names, "Acciones Especiales")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -290,7 +285,7 @@ def render_tab_acciones(
 def render_tab_tandas(
     canales_filtrados: Dict[str, pd.DataFrame],
     canales_names: List[str],
-    program_name: str,
+    program_name_display: str,
     excluir_autopromos: Dict[str, bool]
 ):
     render_tab_title("📢", "Tanda Publicitaria")
@@ -305,7 +300,6 @@ def render_tab_tandas(
         )
         return
 
-    # Estadísticas
     from comparator import STATUS_ALL, STATUS_PARTIAL, STATUS_MISSING
     total     = len(comparison_df)
     en_todos  = (comparison_df["Estado"] == STATUS_ALL).sum()     if "Estado" in comparison_df.columns else 0
@@ -315,23 +309,21 @@ def render_tab_tandas(
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     with col_s1: st.metric("Total IDs únicos", total)
     with col_s2: st.metric("✅ Coincidencias", en_todos)
-    with col_s3: st.metric("⚠️ Parciales",     parciales)
+    with col_s3: st.metric("⚠️ Parciales / Desfase", parciales)
     with col_s4: st.metric("❌ Faltantes",      faltantes)
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    # Leyenda
     col_l1, col_l2, col_l3 = st.columns(3)
     with col_l1:
         st.markdown('<span class="badge badge-green">✅ En todos</span> Presente en todos los canales', unsafe_allow_html=True)
     with col_l2:
-        st.markdown('<span class="badge badge-yellow">⚠️ Parcial</span> Solo en algunos canales', unsafe_allow_html=True)
+        st.markdown('<span class="badge badge-yellow">⚠️ Parcial</span> Solo en algunos canales o con desfase', unsafe_allow_html=True)
     with col_l3:
         st.markdown('<span class="badge badge-red">❌ Faltante</span> Ausente en algún canal', unsafe_allow_html=True)
 
     st.markdown("")
 
-    # Preparar display
     show_df = comparison_df.copy()
     rename_map = {c: c.lstrip("_") for c in show_df.columns if c.startswith("_")}
     show_df = show_df.rename(columns=rename_map)
@@ -353,8 +345,7 @@ def render_tab_tandas(
         tab_key="tandas"
     )
 
-    # Exportación
-    render_export_section(comparison_df, program_name, "tandas", canales_names, "Tandas Publicitarias")
+    render_export_section(comparison_df, program_name_display, "tandas", canales_names, "Tandas Publicitarias")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -364,7 +355,7 @@ def render_tab_tandas(
 def render_tab_programa(
     canales_filtrados: Dict[str, pd.DataFrame],
     canales_names: List[str],
-    program_name: str
+    program_name_display: str
 ):
     render_tab_title("🎬", "Resumen del Programa")
 
@@ -382,7 +373,6 @@ def render_tab_programa(
 
     st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-    # Análisis visual de duración
     st.markdown("**📊 Análisis de duración por canal**")
 
     dur_data = []
@@ -399,12 +389,11 @@ def render_tab_programa(
         dur_df = pd.DataFrame(dur_data).set_index("Canal")
         st.bar_chart(dur_df)
 
-    # Exportación
     with st.expander("📥 Exportar resumen del programa", expanded=False):
         col_e1, col_e2 = st.columns(2)
         with col_e1:
             excel_bytes = df_to_excel_bytes({"Programa": summary_df})
-            fname = build_export_filename("programa", program_name, "xlsx")
+            fname = build_export_filename("programa", program_name_display, "xlsx")
             st.download_button(
                 "⬇️ Descargar Excel",
                 data=excel_bytes,
@@ -415,7 +404,7 @@ def render_tab_programa(
             )
         with col_e2:
             csv_bytes = df_to_csv_bytes(summary_df)
-            fname_csv = build_export_filename("programa", program_name, "csv")
+            fname_csv = build_export_filename("programa", program_name_display, "csv")
             st.download_button(
                 "⬇️ Descargar CSV",
                 data=csv_bytes,
@@ -438,7 +427,6 @@ def main():
     canales = render_sidebar()
 
     if not canales:
-        # Estado inicial — sin archivos cargados
         st.markdown("""
         <div style="
             text-align: center;
@@ -460,10 +448,9 @@ def main():
 
     canales_names = list(canales.keys())
 
-    # ── Resumen de canales cargados ─────────────────────────────────────────
     render_canales_overview(canales_names)
 
-    # ── Selector de programa ────────────────────────────────────────────────
+    # ── Selector MÚLTIPLE de programa ───────────────────────────────────────
     programas = get_unified_program_list(canales)
 
     if not programas:
@@ -473,32 +460,37 @@ def main():
     col_prog, col_cfg = st.columns([3, 1])
 
     with col_prog:
-        program_name = st.selectbox(
-            "🔍 Seleccionar programa",
+        selected_programs = st.multiselect(
+            "🔍 Seleccionar programa(s)",
             options=programas,
-            index=0,
-            key="selected_program",
-            help="El sistema busca por nombre limpio, ignorando horarios y EMS"
+            default=[programas[0]] if programas else [],
+            key="selected_programs",
+            help="Selecciona múltiples variaciones para unificarlas en el mismo análisis."
         )
+
+    if not selected_programs:
+        render_alert("👆 Por favor, selecciona al menos un programa en el menú superior para comenzar el análisis.", "info")
+        return
+
+    # Crear un string amigable para la leyenda
+    program_name_display = " + ".join(selected_programs)
 
     # ── Panel de Autopromos (en expander) ───────────────────────────────────
     with st.expander("⚙️ Configuración de Autopromos", expanded=False):
         excluir_autopromos = render_autopromo_config(canales_names)
 
-    # ── Filtrar datos por programa ──────────────────────────────────────────
-    canales_filtrados = get_filtered_canales(canales, program_name)
+    # ── Filtrar datos (ahora enviamos la lista de seleccionados) ────────────
+    canales_filtrados = get_filtered_canales(canales, selected_programs)
 
     # ── Validaciones ────────────────────────────────────────────────────────
-    # 1. Canales sin datos para el programa
-    vacios = detect_empty_canales(canales, program_name)
+    vacios = detect_empty_canales(canales, selected_programs)
     if vacios:
         render_alert(
-            f"🔔 Los siguientes canales no tienen datos del programa seleccionado: "
+            f"🔔 Los siguientes canales no tienen datos para la selección actual: "
             f"<strong>{', '.join(vacios)}</strong>",
             "warning"
         )
-                   
-    # 3. Alertas de autopromos activos
+
     alertas_auto = detect_autopromos(canales_filtrados, excluir_autopromos)
     for canal_con_auto in alertas_auto:
         render_alert(
@@ -508,7 +500,7 @@ def main():
         )
 
     # ── Leyenda del programa ────────────────────────────────────────────────
-    render_legend(program_name)
+    render_legend(program_name_display)
 
     # ── Métricas superiores ─────────────────────────────────────────────────
     metrics = get_metrics(canales_filtrados, excluir_autopromos)
@@ -530,7 +522,7 @@ def main():
         render_tab_acciones(
             canales_filtrados=canales_filtrados,
             canales_names=canales_names,
-            program_name=program_name,
+            program_name_display=program_name_display,
             excluir_autopromos=excluir_autopromos
         )
 
@@ -538,7 +530,7 @@ def main():
         render_tab_tandas(
             canales_filtrados=canales_filtrados,
             canales_names=canales_names,
-            program_name=program_name,
+            program_name_display=program_name_display,
             excluir_autopromos=excluir_autopromos
         )
 
@@ -546,7 +538,7 @@ def main():
         render_tab_programa(
             canales_filtrados=canales_filtrados,
             canales_names=canales_names,
-            program_name=program_name
+            program_name_display=program_name_display
         )
 
 
