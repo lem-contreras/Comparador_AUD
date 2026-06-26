@@ -8,6 +8,7 @@ Optimizado con operaciones vectorizadas de Pandas.
 
 import pandas as pd
 from typing import Dict, List, Optional, Tuple
+from collections import Counter
 
 # ─── Constantes de estado ────────────────────────────────────────────────────
 
@@ -29,6 +30,29 @@ BG_COLOR_MAP = {
     STATUS_MISSING: "#f8d7da",
 }
 
+# ─── Funciones auxiliares de tiempo ──────────────────────────────────────────
+
+def _parse_duration_to_seconds(val) -> Optional[int]:
+    """Convierte un valor de duración (HH:MM:SS o segundos puros) a enteros."""
+    if pd.isna(val):
+        return None
+    val = str(val).strip()
+    if not val:
+        return None
+    if ":" in val:
+        parts = val.split(":")
+        try:
+            if len(parts) == 3:
+                return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(float(parts[2]))
+            elif len(parts) == 2:
+                return int(parts[0]) * 60 + int(float(parts[1]))
+        except (ValueError, IndexError):
+            return None
+    else:
+        try:
+            return int(float(val))
+        except ValueError:
+            return None
 
 # ─── Funciones de comparación ────────────────────────────────────────────────
 
@@ -39,17 +63,14 @@ def compare_spots(
     key_column: str = "Spot Id"
 ) -> pd.DataFrame:
     """
-    Compara spots entre canales aplicando sincronización inteligente.
-    Calcula el desfase de inicio del programa por canal y lo descuenta
-    para comparar en tiempos relativos con +/- 10s de tolerancia.
-    Además, ORDENA CRONOLÓGICAMENTE los resultados finales.
+    Compara spots, detecta desfases de transmisión, ordena cronológicamente,
+    y audita que la duración redondeada a múltiplos de 5 sea consistente.
     """
     if excluir_autopromos is None:
         excluir_autopromos = {}
 
     canal_names = list(canales_data.keys())
     
-    # 1. Calcular desfases globales (offsets) de los canales basados en el inicio del programa
     channel_offsets = {}
     program_starts = {}
     
@@ -67,10 +88,8 @@ def compare_spots(
     if program_starts:
         global_min_start = min(program_starts.values())
         for canal, start_time in program_starts.items():
-            # Cuántos segundos empezó tarde este canal respecto al primero
             channel_offsets[canal] = (start_time - global_min_start).total_seconds()
 
-    # 2. Filtrar solo los registros del tipo de bloque que estamos comparando
     spots_por_canal: Dict[str, pd.DataFrame] = {}
     for canal, df in canales_data.items():
         if "Tipo Bloque Norm" not in df.columns:
@@ -80,7 +99,6 @@ def compare_spots(
         mask = df["Tipo Bloque Norm"].str.strip().str.lower() == tipo_bloque_norm.lower()
         spots_por_canal[canal] = df[mask].copy()
 
-    # 3. Obtener universo total de IDs y detectar Autopromos
     all_ids = set()
     autopromo_ids = set()
 
@@ -96,7 +114,6 @@ def compare_spots(
     if not all_ids:
         return pd.DataFrame()
 
-    # 4. Construir las filas de comparación
     rows = []
     for spot_id in sorted(all_ids):
         row = {"Spot Id": spot_id}
@@ -106,27 +123,33 @@ def compare_spots(
         required_count = len(canal_names)
         ignored_everywhere = True
 
-        # Recopilar tiempos AJUSTADOS de "Inicio" (Tiempo Real - Desfase del Canal)
         adjusted_times_for_spot = {}
+        durations_for_spot = {}  # Nuevo: almacenar duraciones por canal para auditar
+
         for canal in canal_names:
             df_canal = spots_por_canal.get(canal, pd.DataFrame())
             if not df_canal.empty and key_column in df_canal.columns:
                 matches = df_canal[df_canal[key_column].astype(str) == spot_id]
                 if not matches.empty:
                     first = matches.iloc[0]
+                    
+                    # Tiempo ajustado
                     if "Inicio" in first.index and pd.notna(first["Inicio"]):
                         try:
                             actual_time = pd.to_datetime(str(first["Inicio"]).strip())
                             offset = channel_offsets.get(canal, 0.0)
-                            # Restamos el retraso original del canal para nivelarlos
                             adjusted_times_for_spot[canal] = actual_time - pd.Timedelta(seconds=offset)
                         except Exception:
                             pass
+                    
+                    # Duración para auditoría
+                    if "Duración" in first.index and pd.notna(first["Duración"]):
+                        sec = _parse_duration_to_seconds(first["Duración"])
+                        if sec is not None:
+                            durations_for_spot[canal] = sec
                             
         min_adj_time = min(adjusted_times_for_spot.values()) if adjusted_times_for_spot else None
         has_delay = False
-        
-        # Guardamos este tiempo ajustado mínimo temporalmente para poder ordenar cronológicamente
         row["_sort_time"] = min_adj_time
 
         for canal in canal_names:
@@ -152,7 +175,6 @@ def compare_spots(
                 else:
                     is_delayed = False
                     if min_adj_time and canal in adjusted_times_for_spot:
-                        # Diferencia relativa (ya nivelada)
                         diff_sec = abs((adjusted_times_for_spot[canal] - min_adj_time).total_seconds())
                         if diff_sec > 10:
                             is_delayed = True
@@ -190,14 +212,37 @@ def compare_spots(
         else:
             row["Estado"] = STATUS_PARTIAL
 
+        # Auditoría de redondeo de tiempos
+        has_irregular_time = False
+        outlier_canals = []
+        if len(durations_for_spot) > 1:
+            # Fórmula para redondear al múltiplo de 5 más cercano
+            rounded_durs = {c: int(s / 5 + 0.5) * 5 for c, s in durations_for_spot.items()}
+            unique_rounded = set(rounded_durs.values())
+            
+            if len(unique_rounded) > 1:
+                has_irregular_time = True
+                # Descubrir cuál es la tendencia general
+                counts = Counter(rounded_durs.values())
+                trend_val = counts.most_common(1)[0][0]
+                
+                # Obtener los canales que rompen la tendencia
+                outlier_canals = [c for c, val in rounded_durs.items() if val != trend_val]
+                
+                # Marcar visualmente la duración extraída
+                if "_Duración" in row:
+                    row["_Duración"] = f"🔴 {row['_Duración']}"
+                    
+        # Sobreescribir el estado si se detectó irregularidad de tiempo
+        if has_irregular_time:
+            str_outliers = ", ".join(outlier_canals)
+            row["Estado"] = f"⚠️ Tiempo irregular ({str_outliers})"
+
         rows.append(row)
 
-    # 5. ORDENAMIENTO CRONOLÓGICO Y LIMPIEZA
     result_df = pd.DataFrame(rows)
     if not result_df.empty and "_sort_time" in result_df.columns:
-        # Ordenamos por tiempo de inicio (y luego por Spot Id por si dos inician en el mismo segundo exacto)
         result_df = result_df.sort_values(by=["_sort_time", "Spot Id"], na_position="last").reset_index(drop=True)
-        # Eliminamos la columna de apoyo visual
         result_df = result_df.drop(columns=["_sort_time"])
 
     return result_df
