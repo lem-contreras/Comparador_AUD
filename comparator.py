@@ -42,6 +42,7 @@ def compare_spots(
     Compara spots entre canales aplicando sincronización inteligente.
     Calcula el desfase de inicio del programa por canal y lo descuenta
     para comparar en tiempos relativos con +/- 10s de tolerancia.
+    Además, ORDENA CRONOLÓGICAMENTE los resultados finales.
     """
     if excluir_autopromos is None:
         excluir_autopromos = {}
@@ -124,6 +125,9 @@ def compare_spots(
                             
         min_adj_time = min(adjusted_times_for_spot.values()) if adjusted_times_for_spot else None
         has_delay = False
+        
+        # Guardamos este tiempo ajustado mínimo temporalmente para poder ordenar cronológicamente
+        row["_sort_time"] = min_adj_time
 
         for canal in canal_names:
             df_canal = spots_por_canal.get(canal, pd.DataFrame())
@@ -188,7 +192,15 @@ def compare_spots(
 
         rows.append(row)
 
-    return pd.DataFrame(rows)
+    # 5. ORDENAMIENTO CRONOLÓGICO Y LIMPIEZA
+    result_df = pd.DataFrame(rows)
+    if not result_df.empty and "_sort_time" in result_df.columns:
+        # Ordenamos por tiempo de inicio (y luego por Spot Id por si dos inician en el mismo segundo exacto)
+        result_df = result_df.sort_values(by=["_sort_time", "Spot Id"], na_position="last").reset_index(drop=True)
+        # Eliminamos la columna de apoyo visual
+        result_df = result_df.drop(columns=["_sort_time"])
+
+    return result_df
 
 
 def compare_acciones_especiales(
